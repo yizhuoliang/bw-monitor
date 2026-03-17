@@ -1,0 +1,10 @@
+bw_probe
+*.o
+*.pyc
+__pycache__/
+*.png
+*.log
+*.jsonl
+logs/
+plots/
+perftest/
