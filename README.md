@@ -10,9 +10,12 @@ src/
   bw_controller2.py  # (WIP) Custom UCX agent controller with persistent RC connections
   bw_probe.c         # (WIP) Custom UCP tag send/recv probe agent with checksum
   bw_plot.py         # Async matplotlib plotter — reads JSONL logs, generates timeline PNG
+  traffic_gen.py     # Standalone IB traffic generator for interference testing
 scripts/
   run_test.sh        # 5-minute smoke test
   run_6h.sh          # Long-running deployment with live plotter (duration configurable)
+docs/
+  carc-slurm.md      # USC CARC cluster-specific node IPs, paths, and run commands
 Makefile             # Builds bw_probe from src/bw_probe.c (requires UCX)
 ```
 
@@ -80,24 +83,33 @@ nohup bash scripts/run_6h.sh 7200 &
 make
 ```
 
+## Traffic generator
+
+Standalone tool for generating controlled IB interference. No hardcoded cluster config — everything via CLI args.
+
+```bash
+python3 src/traffic_gen.py \
+    --nodes node0:10.0.0.1,node1:10.0.0.2,node2:10.0.0.3 \
+    --size 512 --concurrent 2 --gap 2.0 --duration 60
+
+# All options:
+#   --size          per-transmission MiB (default: 512)
+#   --concurrent    simultaneous transfers per round (default: 2)
+#   --gap           seconds between rounds (default: 2.0)
+#   --rounds        max rounds, 0=unlimited (default: 0)
+#   --duration      max runtime seconds (default: 60)
+#   --port          ucx_perftest port (default: 18600)
+#   --cpu           pin to CPU core via taskset
+#   --ucx-perftest  path to binary on remote nodes (default: from PATH)
+#   --env           remote env setup command (e.g. "module load ucx/1.16.0")
+```
+
 ## How it works
 
 The controller starts persistent `ucx_perftest` servers (UCP `put_bw`) on each node in a while-loop, then sequentially measures all directed pairs by running clients via SSH with ControlMaster. Measurements use RDMA over InfiniBand, NUMA-pinned to the IB NIC's local cores.
 
 Logs are written as JSONL. The plotter reads all `bw_*.jsonl` files and generates a per-pair bandwidth timeline plot, refreshing every 60 seconds.
 
-## CARC SLURM specifics
+## Cluster-specific docs
 
-On the USC CARC cluster the environment differs from stock Ubuntu:
-
-- **UCX path**: `/apps/spack/.../ucx-1.16.0-sozthz6/` (load via `module load ucx/1.16.0`)
-- **Conda env**: `/scratch1/yizhuoli/conda-envs/sglang-fp` (has matplotlib)
-- **Logs dir**: `/scratch1/yizhuoli/bw-monitor/logs/` (BeeGFS scratch, shared across nodes)
-- **NUMA**: IB NIC on NUMA node 1, CPUs 32-63
-- **Nodes**: SSH from any allocated compute node to any other; `/home1/` is NFS-shared
-
-Build on a compute node (login nodes lack the IB libraries):
-```bash
-module load ucx/1.16.0
-make UCX_DIR=/apps/spack/2406/apps/linux-rocky8-x86_64_v3/gcc-13.3.0/ucx-1.16.0-sozthz6
-```
+- [USC CARC SLURM](docs/carc-slurm.md) — node IPs, UCX module paths, run commands
